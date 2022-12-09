@@ -19,6 +19,9 @@ contract Auction {
     /// @notice Reference to the Factory
     Factory private immutable factory;
 
+    /// @notice Reference to the Loan contract. CSR NFTs are transferred there after a successful auction
+    address private loan;
+
     /*//////////////////////////////////////////////////////////////
                                  STATE
     //////////////////////////////////////////////////////////////*/
@@ -68,10 +71,12 @@ contract Auction {
     
     /// @notice Set the relevant addresses.
     /// @param _factory Address of the Factory
-    /// @param _baseNft Address of the auctioned NFT colleciton
-    constructor(address _factory, address _baseNft) {
+    /// @param _baseNft Address of the auctioned NFT collection
+    /// @param _loan Address of the loan contract. CSR NFTs are transferred there after a successful auction
+    constructor(address _factory, address _baseNft, address _loan) {
         factory = Factory(_factory);
         baseNft = ERC721(_baseNft);
+        loan = _loan;
     }
 
     /// @notice Create a new auction, called by the factory
@@ -140,13 +145,15 @@ contract Auction {
             revert AuctionNotOverYet(auctionEnd);
         auction.auctionEnd = type(uint40).max; // Ensure that auction can only be finalized once (even if NFT is later again in this contract)
         address highestBidder = auction.highestBidder;
+        uint nftId = auction.nftId;
         if (highestBidder == address(0)) {
             // There were no bids
-            baseNft.transferFrom(address(this), auction.creator, auction.nftId);
+            baseNft.transferFrom(address(this), auction.creator, nftId);
         } else {
             refundAmounts[auction.creator] += auction.principalAmount; // We also increase refundAmounts here to avoid griefing / failed transfers caused by the creator
-            factory.deployLoan(_auctionId, auction.nftId, auction.creator, auction.highestBidder, auction.principalAmount, auction.currentBidRate);
-            // TODO: Transfer NFT
+            // We transfer the NFT directly to the loan contract (instead of first to the factory) to save gas
+            baseNft.transferFrom(address(this), loan, nftId);
+            factory.deployLoan(_auctionId, nftId, auction.creator, highestBidder, auction.principalAmount, auction.currentBidRate);
         }
     }
 
