@@ -186,7 +186,7 @@ contract Loan {
 
     /// @notice Internal function to accrue interest
     /// @dev Should be called before all modifications to accruedDebt
-    /// @param _loanID ID of the loan to accrue interest for
+    /// @param _loanId ID of the loan to accrue interest for
     function _accrueInterest(uint _loanId) internal {
       LoanData storage loan = loans[_loanId];
       uint secondsPassed = loan.lastAccrued - block.timestamp;
