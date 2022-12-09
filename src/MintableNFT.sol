@@ -33,9 +33,9 @@ contract MintableNFT is ERC721 {
     /// @notice Sets the name, symbol, baseURI, and the address of the auction factory
     /// @param _name Name of the NFT
     /// @param _symbol Symbol of the NFT
-    /// @param _factory Address of the factory. Only the factory is allowed to mint
     /// @param _baseURI NFT base URI. {id}.json is appended to this URI
-    constructor(string memory _name, string memory _symbol, address _factory, string memory _baseURI) ERC721(_name, _symbol) {
+    /// @param _factory Address of the factory. Only the factory is allowed to mint
+    constructor(string memory _name, string memory _symbol, string memory _baseURI, address _factory) ERC721(_name, _symbol) {
         if (_factory.code.length == 0)
             revert InvalidFactoryAddress();
         factory = _factory;

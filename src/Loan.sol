@@ -30,9 +30,6 @@ contract Loan {
     /// @notice Reference to the Borrower NFT, used for authenticating the borrower
     ERC721 public immutable borrowerNft;
 
-    /// @notice The principal amount (the same for all loans)
-    uint private immutable principalAmount;
-
     /*//////////////////////////////////////////////////////////////
                                 STATE
     //////////////////////////////////////////////////////////////*/
@@ -89,25 +86,24 @@ contract Loan {
     /// @param _factory The address of the Factory
     /// @param _fixedLoanNft The address of the fixed loan NFT
     /// @param _borrowerNft The address of the _borrowerNft
-    /// @param _principalAmount The principal of all loans. The accrued debt is initially set to this value
-    constructor(address _csrNft, address _factory, address _fixedLoanNft, address _borrowerNft, uint _principalAmount) {
+    constructor(address _csrNft, address _factory, address _fixedLoanNft, address _borrowerNft) {
         csrNft = ITurnstile(_csrNft);
         factory = _factory;
         fixedLoanNft = ERC721(_fixedLoanNft);
         borrowerNft = ERC721(_borrowerNft);
-        principalAmount = _principalAmount;
     }
 
     /// @notice Create a new loan for the given CSR NFT with the given rate
     /// @dev Only callable by the factory, which also transfers the NFT to this contract when creating the loan
     /// @param _loanId ID of the loan to create. Corresponds to the ID of the fixed loan / borrower NFT that is given to the lender / borrower
     /// @param _csrNftId ID of the CSR NFT that underlies this loan
+    /// @param _principalAmount The principal amount of the loan
     /// @param _rate The interest rate of the loan. Currently determined in an auction, but other ways would be possible
-    function createLoan(uint _loanId, uint _csrNftId, uint16 _rate) external {
+    function createLoan(uint _loanId, uint _csrNftId, uint _principalAmount, uint16 _rate) external {
       if (msg.sender != factory)
         revert OnlyFactoryCanCreateLoans();
       LoanData memory loanData;
-      loanData.accruedDebt = principalAmount;
+      loanData.accruedDebt = _principalAmount;
       loanData.csrNftId = _csrNftId;
       loanData.lastAccrued = uint40(block.timestamp);
       // Provided rate is in 10 BPS, we therefore divide by 1,000

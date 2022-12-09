@@ -3,19 +3,25 @@ pragma solidity >=0.8.0;
 
 import "solmate/tokens/ERC721.sol";
 import "solmate/utils/SafeTransferLib.sol";
-import "./AuctionFactory.sol";
+import "./Factory.sol";
 
+/// @title Auction Contract
+/// @notice Manages the auctions of the CSR NFTs
 contract Auction {
 
     /*//////////////////////////////////////////////////////////////
-                                 STATE
+                                 ADDRESSES
     //////////////////////////////////////////////////////////////*/
 
     /// @notice The auctioned NFT collection
     ERC721 public immutable baseNft;
 
-    /// @notice Reference to the AuctionFactory
-    AuctionFactory private immutable auctionFactory;
+    /// @notice Reference to the Factory
+    Factory private immutable factory;
+
+    /*//////////////////////////////////////////////////////////////
+                                 STATE
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Data that is associated with one auction
     struct AuctionData {
@@ -60,22 +66,24 @@ contract Auction {
     error MustPayPrincipalAmount(uint biddedAmount);
     error OnlyFactoryCanCreateAuctions();
     
-    /// @param _factory Address of the AuctionFactory
+    /// @notice Set the relevant addresses.
+    /// @param _factory Address of the Factory
     /// @param _baseNft Address of the auctioned NFT colleciton
-    constructor(address _factory, address _baseNft ) {
-        auctionFactory = AuctionFactory(_factory);
+    constructor(address _factory, address _baseNft) {
+        factory = Factory(_factory);
         baseNft = ERC721(_baseNft);
     }
 
+    /// @notice Create a new auction, called by the factory
     /// @dev Parameter validation happens in factory and the parameters are not validated here on purpose.
     /// Furthermore, the transfer of the NFT is initiated by the factory
     /// @param _creator Creator of the auction, gets the NFT back if no bids were made
     /// @param _nftId ID of the auctioned NFT
-    /// @param _principalAmount Amount that must be paid for the NFT
+    /// @param _principalAmount Principal amount of the loan
     /// @param _maxRate Maximum rate that can be bid.
     /// @return auctionId ID of the auction
     function createAuction(address _creator, uint _nftId, uint _principalAmount, uint16 _maxRate) external returns (uint auctionId) {
-        if (msg.sender != address(auctionFactory))
+        if (msg.sender != address(factory))
             revert OnlyFactoryCanCreateAuctions();
         AuctionData memory auctionData;
         auctionData.creator = _creator;
@@ -90,9 +98,10 @@ contract Auction {
 
     /// @notice Create a new bid
     /// @dev Uses pull pattern to reimburse current highest bidder, i.e. does not transfer it to him (to avoid griefing)
+    /// @param _auctionId ID of the auction to bid for
     /// @param _bidRate The rate to bid
-    function bid(uint auctionId, uint16 _bidRate) external payable {
-        AuctionData storage auction = auctions[auctionId]; // Reverts when auctionId does not exist
+    function bid(uint _auctionId, uint16 _bidRate) external payable {
+        AuctionData storage auction = auctions[_auctionId]; // Reverts when auctionId does not exist
         uint40 auctionEnd = auction.auctionEnd;
         if (block.timestamp >= auctionEnd)
             revert NoBiddingAfterAuctionEndPossible(auctionEnd);
@@ -123,8 +132,9 @@ contract Auction {
 
     /// @notice Finalize an auction. Can be called by anyone after the auction is over.
     /// If there were no bids, transfers the NFT back to the owner.
-    function finalizeAuction(uint auctionId) external {
-        AuctionData storage auction = auctions[auctionId];
+    /// @param _auctionId ID of the auction to finalize
+    function finalizeAuction(uint _auctionId) external {
+        AuctionData storage auction = auctions[_auctionId];
         uint40 auctionEnd = auction.auctionEnd;
         if (block.timestamp < auctionEnd)
             revert AuctionNotOverYet(auctionEnd);
@@ -135,12 +145,13 @@ contract Auction {
             baseNft.transferFrom(address(this), auction.creator, auction.nftId);
         } else {
             refundAmounts[auction.creator] += auction.principalAmount; // We also increase refundAmounts here to avoid griefing / failed transfers caused by the creator
-            auctionFactory.deployLoan(auctionId, auction.creator, auction.highestBidder);
+            factory.deployLoan(_auctionId, auction.nftId, auction.creator, auction.highestBidder, auction.principalAmount, auction.currentBidRate);
             // TODO: Transfer NFT
         }
     }
 
     /// @notice Function to refund funds to users whose bid was unsuccesful or to get principal as the creator when the bid is over
+    /// Refunds across all auctions, no ID is provided
     function getFunds() external {
         uint refundAmount = refundAmounts[msg.sender];
         refundAmounts[msg.sender] = 0; // Set first to 0 to avoid reentering and claiming again

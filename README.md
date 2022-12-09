@@ -1,4 +1,4 @@
-# Forge Template
+# Canto Fixed Lending
 
 A template for quickly getting started with forge
 
@@ -14,7 +14,8 @@ forge build
 forge test
 ```
 
-## Features
+## Deployment
+Only the `Factory` contract needs to be deployed, it will create all other contracts.
 
 ### Testing Utilities
 
