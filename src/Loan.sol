@@ -90,6 +90,20 @@ contract Loan {
       loans[_loanId] = loanData;
     }
 
+    function repayWithClaimable(uint _loanId) onlyBorrower(_loanId) external {
+      // TODO: Interest
+      LoanData storage loan = loans[_loanId];
+      uint tokenId = loan.csrNftId;
+      uint toClaim = csrNft.balances(tokenId);
+      uint debtOutstanding = loan.accruedDebt;
+      if (toClaim > debtOutstanding) {
+        toClaim = debtOutstanding;
+      }
+      uint claimed = csrNft.withdraw(tokenId, payable(address(this)), toClaim); // claimed should always be equal to toClaim because of the logic above
+      loan.accruedDebt -= claimed;
+      loan.withdrawable += claimed;
+    }
+
     function repayWithExternal(uint _loanId) onlyBorrower(_loanId) external payable {
       // TODO: Interest
       LoanData storage loan = loans[_loanId];
