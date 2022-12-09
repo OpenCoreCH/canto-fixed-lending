@@ -3,10 +3,14 @@ pragma solidity >=0.8.0;
 
 import "solmate/tokens/ERC721.sol";
 import "solmate/utils/SafeTransferLib.sol";
+import "solmate/utils/SignedWadMath.sol";
+import "solmate/utils/FixedPointMathLib.sol";
 import "./interface/ITurnstile.sol";
 import "./MintableNFT.sol";
 
 contract Loan {
+
+    int constant DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
 
     /*//////////////////////////////////////////////////////////////
                                  STATE
@@ -35,10 +39,10 @@ contract Loan {
       uint accruedDebt;
       /// @notice Amount that is withdrawable by the owner of the fixed loan NFT
       uint withdrawable;
+      /// @notice The interest rate, stored with 18 decimals. Stored as int to avoid casting for the rate calculations
+      int rateWad;
       /// @notice Last time interest was accrued
       uint40 lastAccrued;
-      /// @notice The interest rate
-      uint16 rate;
     }
 
     /// @notice Mapping containing the informations about the loans
@@ -87,12 +91,13 @@ contract Loan {
       loanData.accruedDebt = principalAmount;
       loanData.csrNftId = _csrNftId;
       loanData.lastAccrued = uint40(block.timestamp);
-      loanData.rate = _rate;
+      // Provided rate is in 10 BPS, we therefore divide by 1,000
+      loanData.rateWad = toWadUnsafe(_rate) / 1_000; // No overflow possible because _rate is uint16
       loans[_loanId] = loanData;
     }
 
     function repayWithClaimable(uint _loanId) onlyBorrower(_loanId) external {
-      // TODO: Interest
+      _accrueInterest(_loanId);
       LoanData storage loan = loans[_loanId];
       uint tokenId = loan.csrNftId;
       uint toClaim = csrNft.balances(tokenId);
@@ -106,7 +111,7 @@ contract Loan {
     }
 
     function repayWithExternal(uint _loanId) onlyBorrower(_loanId) external payable {
-      // TODO: Interest
+      _accrueInterest(_loanId);
       LoanData storage loan = loans[_loanId];
       uint debtOutstanding = loan.accruedDebt;
       if (msg.value > debtOutstanding) {
@@ -143,5 +148,18 @@ contract Loan {
         revert AccruedDebtRemaining(accruedDebt);
       csrNft.transferFrom(address(this), msg.sender, loan.csrNftId);
       // TODO: Burn borrower NFT? Can something else (malicious) be done with it afterwards
+    }
+
+    function _accrueInterest(uint _loanId) internal {
+      LoanData storage loan = loans[_loanId];
+      uint secondsPassed = loan.lastAccrued - block.timestamp;
+      if (secondsPassed == 0) {
+        return;
+      }
+      int daysPassedWad = toDaysWadUnsafe(secondsPassed);
+      int yearsPassedWad = wadDiv(daysPassedWad, DAYS_WAD);
+      uint debtMultiplerWad = uint(wadExp(wadMul(yearsPassedWad, loan.rateWad))); // exp(r * Δt). Cast to uint is safe here because result is always positive
+      loan.accruedDebt = FixedPointMathLib.mulWadUp(loan.accruedDebt, debtMultiplerWad); // Divides by WAD to bring result back to original unit
+      loan.lastAccrued = uint40(block.timestamp);
     }
 }
