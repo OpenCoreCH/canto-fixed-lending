@@ -133,7 +133,7 @@ contract Loan {
         _amount = withdrawable;
       }
       loan.withdrawable -= _amount;
-      SafeTransferLib.safeTransferETH(msg.sender, withdrawable);
+      SafeTransferLib.safeTransferETH(msg.sender, _amount);
     }
 
     function withdrawNFT(uint _loanId) onlyBorrower(_loanId) external {
