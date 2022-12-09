@@ -58,6 +58,7 @@ contract Loan {
     error OnlyLender();
     error OnlyFactoryCanCreateLoans();
     error TooMuchTooWithdrawRequested();
+    error AccruedDebtRemaining(uint accruedDebt);
 
     modifier onlyBorrower(uint _loanId) {
       if (msg.sender != borrowerNft.ownerOf(_loanId))
@@ -133,5 +134,14 @@ contract Loan {
       }
       loan.withdrawable -= _amount;
       SafeTransferLib.safeTransferETH(msg.sender, withdrawable);
+    }
+
+    function withdrawNFT(uint _loanId) onlyBorrower(_loanId) external {
+      LoanData storage loan = loans[_loanId];
+      uint accruedDebt = loan.accruedDebt;
+      if (accruedDebt != 0)
+        revert AccruedDebtRemaining(accruedDebt);
+      csrNft.transferFrom(address(this), msg.sender, loan.csrNftId);
+      // TODO: Burn borrower NFT? Can something else (malicious) be done with it afterwards
     }
 }
