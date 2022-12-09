@@ -109,12 +109,12 @@ contract Auction {
             // There were no bids
             baseNft.transferFrom(address(this), creator, nftId);
         } else {
-            SafeTransferLib.safeTransferETH(creator, principalAmount); // TODO: Maybe also increase refundAmounts
+            refundAmounts[creator] += principalAmount; // We also increase refundAmounts here to avoid griefing / failed transfers caused by the creator
         }
     }
 
-    /// @notice Function to refund funds to users whose bid was unsuccesful
-    function refund() external {
+    /// @notice Function to refund funds to users whose bid was unsuccesful or to get principal as the creator when the bid is over
+    function getFunds() external {
         uint refundAmount = refundAmounts[msg.sender];
         refundAmounts[msg.sender] = 0; // Set first to 0 to avoid reentering and claiming again
         SafeTransferLib.safeTransferETH(msg.sender, refundAmount);
