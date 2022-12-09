@@ -19,6 +19,6 @@ contract ContractTest is DSTest {
     }
 
     function testExample() public {
-        AuctionFactory factory = new AuctionFactory(address(0));
+        AuctionFactory factory = new AuctionFactory(address(0), address(0), address(0));
     }
 }

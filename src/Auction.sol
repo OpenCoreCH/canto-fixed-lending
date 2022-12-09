@@ -3,6 +3,7 @@ pragma solidity >=0.8.0;
 
 import "solmate/tokens/ERC721.sol";
 import "solmate/utils/SafeTransferLib.sol";
+import "./AuctionFactory.sol";
 
 contract Auction {
 
@@ -15,6 +16,9 @@ contract Auction {
 
     /// @notice The auctioned NFT collection
     ERC721 public immutable baseNft;
+
+    /// @notice Reference to the AuctionFactory
+    AuctionFactory private immutable auctionFactory;
 
     /// @notice The auctioned NFT ID
     uint public immutable nftId;
@@ -54,16 +58,17 @@ contract Auction {
     error BidRateHigherThanMaxRate(uint16 bidRate);
     error MustPayPrincipalAmount(uint biddedAmount);
     
-    /// @dev While the intended use case is the usage with the AuctionFactory (and we therefore do not validate the _maxRate here for instance),
-    /// the contracts are written in a generic way and could also be used for auctioning other NFTs
+    /// @dev Parameter validation happens in factory and the parameters are not validated here on purpose.
+    /// Furthermore, the transfer of the NFT is initiated by the factory
     /// @param _creator Creator of the auction, gets the NFT back if no bids were made
-    /// @param _baseNFT Address of the auctioned NFT colleciton
+    /// @param _factory Address of the AuctionFactory
+    /// @param _baseNft Address of the auctioned NFT colleciton
     /// @param _nftId ID of the auctioned NFT
     /// @param _principalAmount Amount that must be paid for the NFT
-    /// @param _maxRate Maximum rate that can be bid
-    constructor(address _creator, address _baseNft, uint _nftId, uint _principalAmount, uint16 _maxRate) {
+    /// @param _maxRate Maximum rate that can be bid.
+    constructor(address _creator, address _factory, address _baseNft, uint _nftId, uint _principalAmount, uint16 _maxRate) {
         creator = _creator;
-        ERC721(_baseNft).transferFrom(_creator, address(this), _nftId); // TODO: This does not work because of approval...
+        auctionFactory = AuctionFactory(_factory);
         baseNft = ERC721(_baseNft);
         nftId = _nftId;
         principalAmount = _principalAmount;
