@@ -177,7 +177,7 @@ contract Loan {
       if (accruedDebt != 0)
         revert AccruedDebtRemaining(accruedDebt);
       csrNft.transferFrom(address(this), msg.sender, loan.csrNftId);
-      // TODO: Burn borrower NFT? Can something else (malicious) be done with it afterwards
+      // We do not burn the borrower NFT when the loan is fully repaid, but it does no longer have any use within the contract
     }
 
     /// @notice Internal function to accrue interest
