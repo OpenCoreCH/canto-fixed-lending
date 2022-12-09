@@ -8,28 +8,34 @@ import "solmate/utils/FixedPointMathLib.sol";
 import "./interface/ITurnstile.sol";
 import "./MintableNFT.sol";
 
+/// @title Loan Contract
+/// @notice Manages loans that are backed by CSR NFTs. Authentication of borrower / lender is done with NFTs, so these positions can be transferred
 contract Loan {
 
     int constant DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
 
     /*//////////////////////////////////////////////////////////////
-                                 STATE
+                                ADDRESSES
     //////////////////////////////////////////////////////////////*/
 
-    /// @notice Reference to the Factory
+    /// @notice Reference to the Factory. Only the factory is allowed to create new loans
     address private immutable factory;
 
     /// @notice Reference to the CSR NFT
     ITurnstile public immutable csrNft;
 
-    /// @notice Reference to the Fixed Loan NFT
+    /// @notice Reference to the Fixed Loan NFT, used for authenticating the lender
     ERC721 public immutable fixedLoanNft;
 
-    /// @notice Reference to the Borrower NFT
+    /// @notice Reference to the Borrower NFT, used for authenticating the borrower
     ERC721 public immutable borrowerNft;
 
     /// @notice The principal amount (the same for all loans)
     uint private immutable principalAmount;
+
+    /*//////////////////////////////////////////////////////////////
+                                STATE
+    //////////////////////////////////////////////////////////////*/
 
     /// @notice Date that is associated with a loan
     struct LoanData {
@@ -64,18 +70,26 @@ contract Loan {
     error TooMuchTooWithdrawRequested();
     error AccruedDebtRemaining(uint accruedDebt);
 
+    /// @notice Modifier for functions that are only callable by the owner of the borrower NFT
     modifier onlyBorrower(uint _loanId) {
       if (msg.sender != borrowerNft.ownerOf(_loanId))
         revert OnlyBorrower();
       _;
     }
 
+    /// @notice Modifier for functions that are only callable by the owner of the borrower NFT
     modifier onlyLender(uint _loanId) {
       if (msg.sender != fixedLoanNft.ownerOf(_loanId))
         revert OnlyLender();
       _;
     }
     
+    /// @notice Sets all the addresses and the principal amount which is fixed across all loans
+    /// @param _csrNft The address of the CSR NFT
+    /// @param _factory The address of the Factory
+    /// @param _fixedLoanNft The address of the fixed loan NFT
+    /// @param _borrowerNft The address of the _borrowerNft
+    /// @param _principalAmount The principal of all loans. The accrued debt is initially set to this value
     constructor(address _csrNft, address _factory, address _fixedLoanNft, address _borrowerNft, uint _principalAmount) {
         csrNft = ITurnstile(_csrNft);
         factory = _factory;
@@ -84,6 +98,11 @@ contract Loan {
         principalAmount = _principalAmount;
     }
 
+    /// @notice Create a new loan for the given CSR NFT with the given rate
+    /// @dev Only callable by the factory, which also transfers the NFT to this contract when creating the loan
+    /// @param _loanId ID of the loan to create. Corresponds to the ID of the fixed loan / borrower NFT that is given to the lender / borrower
+    /// @param _csrNftId ID of the CSR NFT that underlies this loan
+    /// @param _rate The interest rate of the loan. Currently determined in an auction, but other ways would be possible
     function createLoan(uint _loanId, uint _csrNftId, uint16 _rate) external {
       if (msg.sender != factory)
         revert OnlyFactoryCanCreateLoans();
@@ -96,9 +115,13 @@ contract Loan {
       loans[_loanId] = loanData;
     }
 
-    function repayWithClaimable(uint _loanId) onlyBorrower(_loanId) external {
+    /// @notice Use the revenue from the CSR NFT to repay the accrued debt.
+    /// @dev Generally uses the whole claimable amount, but if more than the remaining debt is claimable, only the remaining debt is claimed.
+    /// @dev Callable by anyone, e.g. the borrower or the lender
+    /// @param _loanId ID of the loan to claim for
+    function repayWithClaimable(uint _loanId) external {
       _accrueInterest(_loanId);
-      LoanData storage loan = loans[_loanId];
+      LoanData storage loan = loans[_loanId]; // Reverts for non-existing loans
       uint tokenId = loan.csrNftId;
       uint toClaim = csrNft.balances(tokenId);
       uint debtOutstanding = loan.accruedDebt;
@@ -110,6 +133,10 @@ contract Loan {
       loan.withdrawable += claimed;
     }
 
+    /// @notice Pay back the loan directly
+    /// @dev If the borrower pays more than the outstanding debt, he is reimbursed the difference
+    /// @dev Only callable by the borrower
+    /// @param _loanId ID of the loan to repay
     function repayWithExternal(uint _loanId) onlyBorrower(_loanId) external payable {
       _accrueInterest(_loanId);
       LoanData storage loan = loans[_loanId];
@@ -125,7 +152,11 @@ contract Loan {
       }
     }
 
+    /// @notice Withdraw paid back debt / interest as lender
+    /// @dev If the lender requests more than what is withdrawable, the function reverts. Use 0 to request everything
+    /// @dev Only callable by the lender
     /// @param _amount Amount to withdraw. 0 if everything should be withdrawn
+    /// @param _loanId ID of the loan to withdraw from
     function withdrawPayable(uint _loanId, uint _amount) onlyLender(_loanId) external {
       LoanData storage loan = loans[_loanId];
       uint withdrawable = loan.withdrawable;
@@ -141,6 +172,9 @@ contract Loan {
       SafeTransferLib.safeTransferETH(msg.sender, _amount);
     }
 
+    /// @notice Withdraw the CSR NFT after the loan was paid back fully
+    /// @dev Only callable by the borrower after the loan was fully repaid, i.e. accruedDebt is 0
+    /// @param _loanId ID of the loan from which the CSR NFT should be withdrawn
     function withdrawNFT(uint _loanId) onlyBorrower(_loanId) external {
       LoanData storage loan = loans[_loanId];
       uint accruedDebt = loan.accruedDebt;
@@ -150,6 +184,9 @@ contract Loan {
       // TODO: Burn borrower NFT? Can something else (malicious) be done with it afterwards
     }
 
+    /// @notice Internal function to accrue interest
+    /// @dev Should be called before all modifications to accruedDebt
+    /// @param _loanID ID of the loan to accrue interest for
     function _accrueInterest(uint _loanId) internal {
       LoanData storage loan = loans[_loanId];
       uint secondsPassed = loan.lastAccrued - block.timestamp;
