@@ -5,6 +5,7 @@ import {DSTest} from "ds-test/test.sol";
 import {Utilities} from "./utils/Utilities.sol";
 import {console} from "./utils/Console.sol";
 import {Vm} from "forge-std/Vm.sol";
+import "src/AuctionFactory.sol";
 
 contract ContractTest is DSTest {
     Vm internal immutable vm = Vm(HEVM_ADDRESS);
@@ -18,16 +19,6 @@ contract ContractTest is DSTest {
     }
 
     function testExample() public {
-        address payable alice = users[0];
-        // labels alice's address in call traces as "Alice [<address>]"
-        vm.label(alice, "Alice");
-        console.log("alice's address", alice);
-        address payable bob = users[1];
-        vm.label(bob, "Bob");
-
-        vm.prank(alice);
-        (bool sent, ) = bob.call{value: 10 ether}("");
-        assertTrue(sent);
-        assertGt(bob.balance, alice.balance);
+        AuctionFactory factory = new AuctionFactory(address(0));
     }
 }
