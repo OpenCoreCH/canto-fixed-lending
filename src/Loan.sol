@@ -87,4 +87,19 @@ contract Loan {
       loanData.rate = _rate;
       loans[_loanId] = loanData;
     }
+
+    function repayWithExternal(uint _loanId) onlyBorrower(_loanId) external payable {
+      // TODO: Interest
+      LoanData storage loan = loans[_loanId];
+      uint debtOutstanding = loan.accruedDebt;
+      if (msg.value > debtOutstanding) {
+        // Reimburse user if he paid too much
+        loan.accruedDebt = 0;
+        loan.withdrawable += debtOutstanding;
+        SafeTransferLib.safeTransferETH(msg.sender, msg.value - debtOutstanding);
+      } else {
+        loan.accruedDebt -= msg.value;
+        loan.withdrawable += msg.value;
+      }
+    }
 }
