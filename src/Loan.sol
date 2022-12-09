@@ -2,6 +2,7 @@
 pragma solidity >=0.8.0;
 
 import "solmate/tokens/ERC721.sol";
+import "solmate/utils/SafeTransferLib.sol";
 import "./interface/ITurnstile.sol";
 import "./MintableNFT.sol";
 
@@ -56,6 +57,7 @@ contract Loan {
     error OnlyBorrower();
     error OnlyLender();
     error OnlyFactoryCanCreateLoans();
+    error TooMuchTooWithdrawRequested();
 
     modifier onlyBorrower(uint _loanId) {
       if (msg.sender != borrowerNft.ownerOf(_loanId))
@@ -101,5 +103,21 @@ contract Loan {
         loan.accruedDebt -= msg.value;
         loan.withdrawable += msg.value;
       }
+    }
+
+    /// @param _amount Amount to withdraw. 0 if everything should be withdrawn
+    function withdrawPayable(uint _loanId, uint _amount) onlyLender(_loanId) external {
+      LoanData storage loan = loans[_loanId];
+      uint withdrawable = loan.withdrawable;
+      if (_amount > withdrawable) {
+        // We could also only send withdrawable in this case.
+        // But this might be confusing for integrations that expect to receive the requested amount when it is > 0
+        revert TooMuchTooWithdrawRequested();
+      }
+      if (_amount == 0) {
+        _amount = withdrawable;
+      }
+      loan.withdrawable -= _amount;
+      SafeTransferLib.safeTransferETH(msg.sender, withdrawable);
     }
 }
