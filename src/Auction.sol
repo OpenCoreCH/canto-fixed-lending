@@ -128,12 +128,15 @@ contract Auction {
         uint40 auctionEnd = auction.auctionEnd;
         if (block.timestamp < auctionEnd)
             revert AuctionNotOverYet(auctionEnd);
+        auction.auctionEnd = type(uint40).max; // Ensure that auction can only be finalized once (even if NFT is later again in this contract)
         address highestBidder = auction.highestBidder;
         if (highestBidder == address(0)) {
             // There were no bids
             baseNft.transferFrom(address(this), auction.creator, auction.nftId);
         } else {
             refundAmounts[auction.creator] += auction.principalAmount; // We also increase refundAmounts here to avoid griefing / failed transfers caused by the creator
+            auctionFactory.deployLoan(auctionId, auction.creator, auction.highestBidder);
+            // TODO: Transfer NFT
         }
     }
 
