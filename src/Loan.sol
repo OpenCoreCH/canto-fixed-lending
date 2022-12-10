@@ -11,7 +11,7 @@ import "./MintableNFT.sol";
 /// @title Loan Contract
 /// @notice Manages loans that are backed by CSR NFTs. Authentication of borrower / lender is done with NFTs, so these positions can be transferred
 contract Loan {
-    int256 constant DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
+    int256 constant private DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
 
     /*//////////////////////////////////////////////////////////////
                                 ADDRESSES

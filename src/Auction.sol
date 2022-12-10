@@ -45,7 +45,7 @@ contract Auction {
 
     /// @notice Amount that is claimable (because a higher bid was received or for the owner when the auction was succesful).
     /// The mapping is over all auctions. We use pull payment pattern to avoid griefing
-    mapping(address => uint256) refundAmounts;
+    mapping(address => uint256) public refundAmounts;
 
     /// @notice Data of all auctions, position in list is auction ID
     AuctionData[] public auctions;
