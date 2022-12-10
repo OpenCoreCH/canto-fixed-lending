@@ -51,6 +51,15 @@ contract Factory {
         uint256 maxRate
     );
 
+    event LoanDeployed(
+        uint256 indexed auctionId,
+        uint256 csrNftId,
+        address lender,
+        address borrower,
+        uint256 principalAmount,
+        uint16 rate
+    );
+
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
@@ -96,13 +105,13 @@ contract Factory {
     /// @notice Allows the owner of the CSR NFT to start a new auction
     /// @param _csrNftID Id of the CSR NFT to create the auction for
     /// @param _principalAmount Principal amount of the loan
-    /// @param _maxRate Maximum rate that the owner is willing to pay
+    /// @param _maxRate Maximum rate (in 10 BPS) that the owner is willing to pay
     function startAuction(
         uint256 _csrNftID,
         uint256 _principalAmount,
         uint16 _maxRate
     ) external returns (uint256 auctionId) {
-        if (_maxRate > 1000) revert InvalidMaxRate(_maxRate);
+        if (_maxRate > 10000) revert InvalidMaxRate(_maxRate); // We do not allow rates over 1,000% to avoid errors
         auctionId = auction.createAuction(
             msg.sender,
             _csrNftID,
@@ -126,7 +135,7 @@ contract Factory {
     /// @param _lender Address of the lender (creator of the auction)
     /// @param _borrower Address of the borrower (winner of the auction)
     /// @param _principalAmount The principal amount of the loan
-    /// @param _rate The final rate, i.e. the lowest bid during the auction
+    /// @param _rate The final rate (in 10 BPS), i.e. the lowest bid during the auction
     function deployLoan(
         uint256 _auctionId,
         uint256 _csrNftId,
@@ -139,5 +148,13 @@ contract Factory {
         fixedLoanNft.mint(_lender, _auctionId);
         borrowerNft.mint(_borrower, _auctionId);
         loan.createLoan(_auctionId, _csrNftId, _principalAmount, _rate);
+        emit LoanDeployed(
+            _auctionId,
+            _csrNftId,
+            _lender,
+            _borrower,
+            _principalAmount,
+            _rate
+        );
     }
 }

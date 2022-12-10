@@ -9,6 +9,8 @@ The owner of the CSR NFT uses the factory to start the auction. The factory in t
 Afterwards, bidders can bid on the auction. When a new bid with a lower rate is placed, the old bidder can use `getFunds()` to get his funds back.
 After the auction has ended, anyone can call `finalizeAuction`. If it was successful, the CSR owner gets a borrower NFT and the winning bidder a fixed loan NFT. Those will be used for claiming within the Loan contract. Therefore, they could also be traded, as they grant the user access to a future cash flow (or to an NFT when he pays back the debt). The owner of the CSR NFT uses `getFunds()` to get the principal out of the contract.
 
+Note that the rate is always in 10 BPS, i.e. a rate of 85 means 8.5%.
+
 ## Deployment
 Only the `Factory` contract needs to be deployed with the appropriate parameters, it will create all other contracts.
 

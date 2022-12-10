@@ -11,7 +11,7 @@ import "./MintableNFT.sol";
 /// @title Loan Contract
 /// @notice Manages loans that are backed by CSR NFTs. Authentication of borrower / lender is done with NFTs, so these positions can be transferred
 contract Loan {
-    int256 constant private DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
+    int256 private constant DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
 
     /*//////////////////////////////////////////////////////////////
                                 ADDRESSES
@@ -41,7 +41,7 @@ contract Loan {
         uint256 accruedDebt;
         /// @notice Amount that is withdrawable by the owner of the fixed loan NFT
         uint256 withdrawable;
-        /// @notice The interest rate, stored with 18 decimals. Stored as int to avoid casting for the rate calculations
+        /// @notice The interest rate (in 10 BPS), stored with 18 decimals. Stored as int to avoid casting for the rate calculations
         int256 rateWad;
         /// @notice Last time interest was accrued
         uint40 lastAccrued;
@@ -54,12 +54,28 @@ contract Loan {
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event AuctionCreated(
-        address indexed owner,
-        uint256 auctionId,
-        uint256 csrNftID,
-        uint256 principalAmount,
-        uint256 maxRate
+    event ReducedDebtWithClaimable(
+        uint256 indexed loanId,
+        address caller,
+        uint256 claimed,
+        uint256 newAccrued,
+        uint256 newWithdrawable
+    );
+    event ReducedDebtWithExternal(
+        uint256 indexed loanId,
+        uint256 repaid,
+        uint256 newAccrued,
+        uint256 newWithdrawable
+    );
+    event WithdrawnPayable(
+        uint256 indexed loanId,
+        uint256 amount,
+        uint256 newWithdrawable
+    );
+    event NFTWithdrawn(
+        uint256 indexed loanId,
+        uint256 indexed csrNftId,
+        address caller
     );
 
     /*//////////////////////////////////////////////////////////////
@@ -121,6 +137,7 @@ contract Loan {
         // Provided rate is in 10 BPS, we therefore divide by 1,000
         loanData.rateWad = toWadUnsafe(_rate) / 1_000; // No overflow possible because _rate is uint16
         loans[_loanId] = loanData;
+        // We emit no event here, as the factory already does so. Use the factory to watch for new loans
     }
 
     /// @notice Use the revenue from the CSR NFT to repay the accrued debt.
@@ -141,8 +158,17 @@ contract Loan {
             payable(address(this)),
             toClaim
         ); // claimed should always be equal to toClaim because of the logic above
-        loan.accruedDebt -= claimed;
-        loan.withdrawable += claimed;
+        uint256 newAccrued = loan.accruedDebt - claimed;
+        uint256 newWithdrawable = loan.withdrawable + claimed;
+        loan.accruedDebt = newAccrued;
+        loan.withdrawable = newWithdrawable;
+        emit ReducedDebtWithClaimable(
+            _loanId,
+            msg.sender,
+            claimed,
+            newAccrued,
+            newWithdrawable
+        );
     }
 
     /// @notice Pay back the loan directly
@@ -160,14 +186,29 @@ contract Loan {
         if (msg.value > debtOutstanding) {
             // Reimburse user if he paid too much
             loan.accruedDebt = 0;
-            loan.withdrawable += debtOutstanding;
+            uint256 newWithdrawable = loan.withdrawable + debtOutstanding;
+            loan.withdrawable = newWithdrawable;
             SafeTransferLib.safeTransferETH(
                 msg.sender,
                 msg.value - debtOutstanding
             );
+            emit ReducedDebtWithExternal(
+                _loanId,
+                debtOutstanding,
+                0,
+                newWithdrawable
+            );
         } else {
-            loan.accruedDebt -= msg.value;
-            loan.withdrawable += msg.value;
+            uint256 newAccrued = loan.accruedDebt - msg.value;
+            uint256 newWithdrawable = loan.withdrawable + debtOutstanding;
+            loan.accruedDebt = newAccrued;
+            loan.withdrawable += newWithdrawable;
+            emit ReducedDebtWithExternal(
+                _loanId,
+                msg.value,
+                newAccrued,
+                newWithdrawable
+            );
         }
     }
 
@@ -190,8 +231,10 @@ contract Loan {
         if (_amount == 0) {
             _amount = withdrawable;
         }
-        loan.withdrawable -= _amount;
+        uint256 newWithdrawable = loan.withdrawable - _amount;
+        loan.withdrawable = newWithdrawable;
         SafeTransferLib.safeTransferETH(msg.sender, _amount);
+        emit WithdrawnPayable(_loanId, _amount, newWithdrawable);
     }
 
     /// @notice Withdraw the CSR NFT after the loan was paid back fully
@@ -201,8 +244,10 @@ contract Loan {
         LoanData storage loan = loans[_loanId];
         uint256 accruedDebt = loan.accruedDebt;
         if (accruedDebt != 0) revert AccruedDebtRemaining(accruedDebt);
-        csrNft.transferFrom(address(this), msg.sender, loan.csrNftId);
+        uint256 csrNftId = loan.csrNftId;
+        csrNft.transferFrom(address(this), msg.sender, csrNftId);
         // We do not burn the borrower NFT when the loan is fully repaid, but it does no longer have any use within the contract
+        emit NFTWithdrawn(_loanId, csrNftId, msg.sender);
     }
 
     /// @notice Internal function to accrue interest

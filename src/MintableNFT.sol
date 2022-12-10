@@ -17,15 +17,10 @@ contract MintableNFT is ERC721 {
     string public baseURI;
 
     /*//////////////////////////////////////////////////////////////
-                                 EVENTS
-    //////////////////////////////////////////////////////////////*/
-
-    /*//////////////////////////////////////////////////////////////
                                  ERRORS
     //////////////////////////////////////////////////////////////*/
 
     error OnlyFactoryCanMint();
-    error InvalidFactoryAddress();
     error TokenNotMinted();
 
     /// @notice Sets the name, symbol, baseURI, and the address of the auction factory
@@ -39,7 +34,6 @@ contract MintableNFT is ERC721 {
         string memory _baseURI,
         address _factory
     ) ERC721(_name, _symbol) {
-        if (_factory.code.length == 0) revert InvalidFactoryAddress();
         factory = _factory;
         baseURI = _baseURI;
     }

@@ -107,6 +107,7 @@ contract Auction {
         auctionData.currentBidRate = type(uint16).max;
         auctions.push(auctionData);
         return auctions.length - 1;
+        // We emit no event here, as the factory already does so. Use the factory to watch for new auctions
     }
 
     /// @notice Create a new bid
@@ -172,7 +173,7 @@ contract Auction {
     }
 
     /// @notice Function to refund funds to users whose bid was unsuccesful or to get principal as the creator when the bid is over
-    /// Refunds across all auctions, no ID is provided
+    /// @dev Refunds across all auctions, no ID is provided
     function getFunds() external {
         uint256 refundAmount = refundAmounts[msg.sender];
         refundAmounts[msg.sender] = 0; // Set first to 0 to avoid reentering and claiming again
