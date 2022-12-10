@@ -11,8 +11,7 @@ import "./MintableNFT.sol";
 /// @title Loan Contract
 /// @notice Manages loans that are backed by CSR NFTs. Authentication of borrower / lender is done with NFTs, so these positions can be transferred
 contract Loan {
-
-    int constant DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
+    int256 constant DAYS_WAD = 365250000000000000000; // 365.25 as wad (with 18 decimals)
 
     /*//////////////////////////////////////////////////////////////
                                 ADDRESSES
@@ -36,26 +35,32 @@ contract Loan {
 
     /// @notice Date that is associated with a loan
     struct LoanData {
-      /// @notice The CSR NFT ID that is associated with the loan
-      uint csrNftId;
-      /// @notice The accrued debt
-      uint accruedDebt;
-      /// @notice Amount that is withdrawable by the owner of the fixed loan NFT
-      uint withdrawable;
-      /// @notice The interest rate, stored with 18 decimals. Stored as int to avoid casting for the rate calculations
-      int rateWad;
-      /// @notice Last time interest was accrued
-      uint40 lastAccrued;
+        /// @notice The CSR NFT ID that is associated with the loan
+        uint256 csrNftId;
+        /// @notice The accrued debt
+        uint256 accruedDebt;
+        /// @notice Amount that is withdrawable by the owner of the fixed loan NFT
+        uint256 withdrawable;
+        /// @notice The interest rate, stored with 18 decimals. Stored as int to avoid casting for the rate calculations
+        int256 rateWad;
+        /// @notice Last time interest was accrued
+        uint40 lastAccrued;
     }
 
     /// @notice Mapping containing the informations about the loans
-    mapping (uint => LoanData) public loans;
+    mapping(uint256 => LoanData) public loans;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
     //////////////////////////////////////////////////////////////*/
 
-    event AuctionCreated(address indexed owner, uint auctionId, uint csrNftID, uint principalAmount, uint maxRate);
+    event AuctionCreated(
+        address indexed owner,
+        uint256 auctionId,
+        uint256 csrNftID,
+        uint256 principalAmount,
+        uint256 maxRate
+    );
 
     /*//////////////////////////////////////////////////////////////
                                  ERRORS
@@ -65,28 +70,31 @@ contract Loan {
     error OnlyLender();
     error OnlyFactoryCanCreateLoans();
     error TooMuchTooWithdrawRequested();
-    error AccruedDebtRemaining(uint accruedDebt);
+    error AccruedDebtRemaining(uint256 accruedDebt);
 
     /// @notice Modifier for functions that are only callable by the owner of the borrower NFT
-    modifier onlyBorrower(uint _loanId) {
-      if (msg.sender != borrowerNft.ownerOf(_loanId))
-        revert OnlyBorrower();
-      _;
+    modifier onlyBorrower(uint256 _loanId) {
+        if (msg.sender != borrowerNft.ownerOf(_loanId)) revert OnlyBorrower();
+        _;
     }
 
     /// @notice Modifier for functions that are only callable by the owner of the borrower NFT
-    modifier onlyLender(uint _loanId) {
-      if (msg.sender != fixedLoanNft.ownerOf(_loanId))
-        revert OnlyLender();
-      _;
+    modifier onlyLender(uint256 _loanId) {
+        if (msg.sender != fixedLoanNft.ownerOf(_loanId)) revert OnlyLender();
+        _;
     }
-    
+
     /// @notice Sets all the addresses and the principal amount which is fixed across all loans
     /// @param _csrNft The address of the CSR NFT
     /// @param _factory The address of the Factory
     /// @param _fixedLoanNft The address of the fixed loan NFT
     /// @param _borrowerNft The address of the _borrowerNft
-    constructor(address _csrNft, address _factory, address _fixedLoanNft, address _borrowerNft) {
+    constructor(
+        address _csrNft,
+        address _factory,
+        address _fixedLoanNft,
+        address _borrowerNft
+    ) {
         csrNft = ITurnstile(_csrNft);
         factory = _factory;
         fixedLoanNft = ERC721(_fixedLoanNft);
@@ -99,53 +107,68 @@ contract Loan {
     /// @param _csrNftId ID of the CSR NFT that underlies this loan
     /// @param _principalAmount The principal amount of the loan
     /// @param _rate The interest rate of the loan. Currently determined in an auction, but other ways would be possible
-    function createLoan(uint _loanId, uint _csrNftId, uint _principalAmount, uint16 _rate) external {
-      if (msg.sender != factory)
-        revert OnlyFactoryCanCreateLoans();
-      LoanData memory loanData;
-      loanData.accruedDebt = _principalAmount;
-      loanData.csrNftId = _csrNftId;
-      loanData.lastAccrued = uint40(block.timestamp);
-      // Provided rate is in 10 BPS, we therefore divide by 1,000
-      loanData.rateWad = toWadUnsafe(_rate) / 1_000; // No overflow possible because _rate is uint16
-      loans[_loanId] = loanData;
+    function createLoan(
+        uint256 _loanId,
+        uint256 _csrNftId,
+        uint256 _principalAmount,
+        uint16 _rate
+    ) external {
+        if (msg.sender != factory) revert OnlyFactoryCanCreateLoans();
+        LoanData memory loanData;
+        loanData.accruedDebt = _principalAmount;
+        loanData.csrNftId = _csrNftId;
+        loanData.lastAccrued = uint40(block.timestamp);
+        // Provided rate is in 10 BPS, we therefore divide by 1,000
+        loanData.rateWad = toWadUnsafe(_rate) / 1_000; // No overflow possible because _rate is uint16
+        loans[_loanId] = loanData;
     }
 
     /// @notice Use the revenue from the CSR NFT to repay the accrued debt.
     /// @dev Generally uses the whole claimable amount, but if more than the remaining debt is claimable, only the remaining debt is claimed.
     /// @dev Callable by anyone, e.g. the borrower or the lender
     /// @param _loanId ID of the loan to claim for
-    function repayWithClaimable(uint _loanId) external {
-      _accrueInterest(_loanId);
-      LoanData storage loan = loans[_loanId]; // Reverts for non-existing loans
-      uint tokenId = loan.csrNftId;
-      uint toClaim = csrNft.balances(tokenId);
-      uint debtOutstanding = loan.accruedDebt;
-      if (toClaim > debtOutstanding) {
-        toClaim = debtOutstanding;
-      }
-      uint claimed = csrNft.withdraw(tokenId, payable(address(this)), toClaim); // claimed should always be equal to toClaim because of the logic above
-      loan.accruedDebt -= claimed;
-      loan.withdrawable += claimed;
+    function repayWithClaimable(uint256 _loanId) external {
+        _accrueInterest(_loanId);
+        LoanData storage loan = loans[_loanId]; // Reverts for non-existing loans
+        uint256 tokenId = loan.csrNftId;
+        uint256 toClaim = csrNft.balances(tokenId);
+        uint256 debtOutstanding = loan.accruedDebt;
+        if (toClaim > debtOutstanding) {
+            toClaim = debtOutstanding;
+        }
+        uint256 claimed = csrNft.withdraw(
+            tokenId,
+            payable(address(this)),
+            toClaim
+        ); // claimed should always be equal to toClaim because of the logic above
+        loan.accruedDebt -= claimed;
+        loan.withdrawable += claimed;
     }
 
     /// @notice Pay back the loan directly
     /// @dev If the borrower pays more than the outstanding debt, he is reimbursed the difference
     /// @dev Only callable by the borrower
     /// @param _loanId ID of the loan to repay
-    function repayWithExternal(uint _loanId) onlyBorrower(_loanId) external payable {
-      _accrueInterest(_loanId);
-      LoanData storage loan = loans[_loanId];
-      uint debtOutstanding = loan.accruedDebt;
-      if (msg.value > debtOutstanding) {
-        // Reimburse user if he paid too much
-        loan.accruedDebt = 0;
-        loan.withdrawable += debtOutstanding;
-        SafeTransferLib.safeTransferETH(msg.sender, msg.value - debtOutstanding);
-      } else {
-        loan.accruedDebt -= msg.value;
-        loan.withdrawable += msg.value;
-      }
+    function repayWithExternal(uint256 _loanId)
+        external
+        payable
+        onlyBorrower(_loanId)
+    {
+        _accrueInterest(_loanId);
+        LoanData storage loan = loans[_loanId];
+        uint256 debtOutstanding = loan.accruedDebt;
+        if (msg.value > debtOutstanding) {
+            // Reimburse user if he paid too much
+            loan.accruedDebt = 0;
+            loan.withdrawable += debtOutstanding;
+            SafeTransferLib.safeTransferETH(
+                msg.sender,
+                msg.value - debtOutstanding
+            );
+        } else {
+            loan.accruedDebt -= msg.value;
+            loan.withdrawable += msg.value;
+        }
     }
 
     /// @notice Withdraw paid back debt / interest as lender
@@ -153,46 +176,53 @@ contract Loan {
     /// @dev Only callable by the lender
     /// @param _amount Amount to withdraw. 0 if everything should be withdrawn
     /// @param _loanId ID of the loan to withdraw from
-    function withdrawPayable(uint _loanId, uint _amount) onlyLender(_loanId) external {
-      LoanData storage loan = loans[_loanId];
-      uint withdrawable = loan.withdrawable;
-      if (_amount > withdrawable) {
-        // We could also only send withdrawable in this case.
-        // But this might be confusing for integrations that expect to receive the requested amount when it is > 0
-        revert TooMuchTooWithdrawRequested();
-      }
-      if (_amount == 0) {
-        _amount = withdrawable;
-      }
-      loan.withdrawable -= _amount;
-      SafeTransferLib.safeTransferETH(msg.sender, _amount);
+    function withdrawPayable(uint256 _loanId, uint256 _amount)
+        external
+        onlyLender(_loanId)
+    {
+        LoanData storage loan = loans[_loanId];
+        uint256 withdrawable = loan.withdrawable;
+        if (_amount > withdrawable) {
+            // We could also only send withdrawable in this case.
+            // But this might be confusing for integrations that expect to receive the requested amount when it is > 0
+            revert TooMuchTooWithdrawRequested();
+        }
+        if (_amount == 0) {
+            _amount = withdrawable;
+        }
+        loan.withdrawable -= _amount;
+        SafeTransferLib.safeTransferETH(msg.sender, _amount);
     }
 
     /// @notice Withdraw the CSR NFT after the loan was paid back fully
     /// @dev Only callable by the borrower after the loan was fully repaid, i.e. accruedDebt is 0
     /// @param _loanId ID of the loan from which the CSR NFT should be withdrawn
-    function withdrawNFT(uint _loanId) onlyBorrower(_loanId) external {
-      LoanData storage loan = loans[_loanId];
-      uint accruedDebt = loan.accruedDebt;
-      if (accruedDebt != 0)
-        revert AccruedDebtRemaining(accruedDebt);
-      csrNft.transferFrom(address(this), msg.sender, loan.csrNftId);
-      // We do not burn the borrower NFT when the loan is fully repaid, but it does no longer have any use within the contract
+    function withdrawNFT(uint256 _loanId) external onlyBorrower(_loanId) {
+        LoanData storage loan = loans[_loanId];
+        uint256 accruedDebt = loan.accruedDebt;
+        if (accruedDebt != 0) revert AccruedDebtRemaining(accruedDebt);
+        csrNft.transferFrom(address(this), msg.sender, loan.csrNftId);
+        // We do not burn the borrower NFT when the loan is fully repaid, but it does no longer have any use within the contract
     }
 
     /// @notice Internal function to accrue interest
     /// @dev Should be called before all modifications to accruedDebt
     /// @param _loanId ID of the loan to accrue interest for
-    function _accrueInterest(uint _loanId) internal {
-      LoanData storage loan = loans[_loanId];
-      uint secondsPassed = loan.lastAccrued - block.timestamp;
-      if (secondsPassed == 0) {
-        return;
-      }
-      int daysPassedWad = toDaysWadUnsafe(secondsPassed);
-      int yearsPassedWad = wadDiv(daysPassedWad, DAYS_WAD);
-      uint debtMultiplerWad = uint(wadExp(wadMul(yearsPassedWad, loan.rateWad))); // exp(r * Δt). Cast to uint is safe here because result is always positive
-      loan.accruedDebt = FixedPointMathLib.mulWadUp(loan.accruedDebt, debtMultiplerWad); // Divides by WAD to bring result back to original unit
-      loan.lastAccrued = uint40(block.timestamp);
+    function _accrueInterest(uint256 _loanId) internal {
+        LoanData storage loan = loans[_loanId];
+        uint256 secondsPassed = loan.lastAccrued - block.timestamp;
+        if (secondsPassed == 0) {
+            return;
+        }
+        int256 daysPassedWad = toDaysWadUnsafe(secondsPassed);
+        int256 yearsPassedWad = wadDiv(daysPassedWad, DAYS_WAD);
+        uint256 debtMultiplerWad = uint256(
+            wadExp(wadMul(yearsPassedWad, loan.rateWad))
+        ); // exp(r * Δt). Cast to uint is safe here because result is always positive
+        loan.accruedDebt = FixedPointMathLib.mulWadUp(
+            loan.accruedDebt,
+            debtMultiplerWad
+        ); // Divides by WAD to bring result back to original unit
+        loan.lastAccrued = uint40(block.timestamp);
     }
 }

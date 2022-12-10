@@ -8,7 +8,6 @@ import "./Factory.sol";
 /// @title Auction Contract
 /// @notice Manages the auctions of the CSR NFTs
 contract Auction {
-
     /*//////////////////////////////////////////////////////////////
                                  ADDRESSES
     //////////////////////////////////////////////////////////////*/
@@ -31,9 +30,9 @@ contract Auction {
         /// @notice Creator of the auction that owned the NFT
         address creator;
         /// @notice The auctioned NFT ID
-        uint nftId;
+        uint256 nftId;
         /// @notice Principal amount for buying the NFT
-        uint principalAmount;
+        uint256 principalAmount;
         /// @notice Maximum rate that can be bid
         uint16 maxRate;
         /// @notice End of the auction, can be extended by additional bids
@@ -44,9 +43,9 @@ contract Auction {
         address highestBidder;
     }
 
-    /// @notice Amount that is claimable (because a higher bid was received or for the owner when the auction was succesful). 
+    /// @notice Amount that is claimable (because a higher bid was received or for the owner when the auction was succesful).
     /// The mapping is over all auctions. We use pull payment pattern to avoid griefing
-    mapping (address => uint) refundAmounts;
+    mapping(address => uint256) refundAmounts;
 
     /// @notice Data of all auctions, position in list is auction ID
     AuctionData[] public auctions;
@@ -66,14 +65,18 @@ contract Auction {
     error AuctionNotOverYet(uint40 auctionEnd);
     error BidRateMustBeLowerThanCurrentRate(uint16 bidRate, uint16 currentRate);
     error BidRateHigherThanMaxRate(uint16 bidRate);
-    error MustPayPrincipalAmount(uint biddedAmount);
+    error MustPayPrincipalAmount(uint256 biddedAmount);
     error OnlyFactoryCanCreateAuctions();
-    
+
     /// @notice Set the relevant addresses.
     /// @param _factory Address of the Factory
     /// @param _baseNft Address of the auctioned NFT collection
     /// @param _loan Address of the loan contract. CSR NFTs are transferred there after a successful auction
-    constructor(address _factory, address _baseNft, address _loan) {
+    constructor(
+        address _factory,
+        address _baseNft,
+        address _loan
+    ) {
         factory = Factory(_factory);
         baseNft = ERC721(_baseNft);
         loan = _loan;
@@ -87,7 +90,12 @@ contract Auction {
     /// @param _principalAmount Principal amount of the loan
     /// @param _maxRate Maximum rate that can be bid.
     /// @return auctionId ID of the auction
-    function createAuction(address _creator, uint _nftId, uint _principalAmount, uint16 _maxRate) external returns (uint auctionId) {
+    function createAuction(
+        address _creator,
+        uint256 _nftId,
+        uint256 _principalAmount,
+        uint16 _maxRate
+    ) external returns (uint256 auctionId) {
         if (msg.sender != address(factory))
             revert OnlyFactoryCanCreateAuctions();
         AuctionData memory auctionData;
@@ -105,7 +113,7 @@ contract Auction {
     /// @dev Uses pull pattern to reimburse current highest bidder, i.e. does not transfer it to him (to avoid griefing)
     /// @param _auctionId ID of the auction to bid for
     /// @param _bidRate The rate to bid
-    function bid(uint _auctionId, uint16 _bidRate) external payable {
+    function bid(uint256 _auctionId, uint16 _bidRate) external payable {
         AuctionData storage auction = auctions[_auctionId]; // Reverts when auctionId does not exist
         uint40 auctionEnd = auction.auctionEnd;
         if (block.timestamp >= auctionEnd)
@@ -115,7 +123,7 @@ contract Auction {
         uint16 currentBidRate = auction.currentBidRate;
         if (_bidRate >= currentBidRate)
             revert BidRateMustBeLowerThanCurrentRate(_bidRate, currentBidRate);
-        uint principalAmount = auction.principalAmount;
+        uint256 principalAmount = auction.principalAmount;
         if (msg.value != principalAmount)
             revert MustPayPrincipalAmount(msg.value);
         address highestBidder = auction.highestBidder;
@@ -125,7 +133,7 @@ contract Auction {
         }
         auction.highestBidder = msg.sender; // It is possible that the current highest bidder bids again with a lower rate, but there is no reason to prevent that
         auction.currentBidRate = _bidRate;
-        emit NewBid(msg.sender, _bidRate); 
+        emit NewBid(msg.sender, _bidRate);
 
         // Cannot underflow because of end time validation
         if (auctionEnd - block.timestamp <= 15 minutes) {
@@ -138,14 +146,13 @@ contract Auction {
     /// @notice Finalize an auction. Can be called by anyone after the auction is over.
     /// If there were no bids, transfers the NFT back to the owner.
     /// @param _auctionId ID of the auction to finalize
-    function finalizeAuction(uint _auctionId) external {
+    function finalizeAuction(uint256 _auctionId) external {
         AuctionData storage auction = auctions[_auctionId];
         uint40 auctionEnd = auction.auctionEnd;
-        if (block.timestamp < auctionEnd)
-            revert AuctionNotOverYet(auctionEnd);
+        if (block.timestamp < auctionEnd) revert AuctionNotOverYet(auctionEnd);
         auction.auctionEnd = type(uint40).max; // Ensure that auction can only be finalized once (even if NFT is later again in this contract)
         address highestBidder = auction.highestBidder;
-        uint nftId = auction.nftId;
+        uint256 nftId = auction.nftId;
         if (highestBidder == address(0)) {
             // There were no bids
             baseNft.transferFrom(address(this), auction.creator, nftId);
@@ -153,14 +160,21 @@ contract Auction {
             refundAmounts[auction.creator] += auction.principalAmount; // We also increase refundAmounts here to avoid griefing / failed transfers caused by the creator
             // We transfer the NFT directly to the loan contract (instead of first to the factory) to save gas
             baseNft.transferFrom(address(this), loan, nftId);
-            factory.deployLoan(_auctionId, nftId, auction.creator, highestBidder, auction.principalAmount, auction.currentBidRate);
+            factory.deployLoan(
+                _auctionId,
+                nftId,
+                auction.creator,
+                highestBidder,
+                auction.principalAmount,
+                auction.currentBidRate
+            );
         }
     }
 
     /// @notice Function to refund funds to users whose bid was unsuccesful or to get principal as the creator when the bid is over
     /// Refunds across all auctions, no ID is provided
     function getFunds() external {
-        uint refundAmount = refundAmounts[msg.sender];
+        uint256 refundAmount = refundAmounts[msg.sender];
         refundAmounts[msg.sender] = 0; // Set first to 0 to avoid reentering and claiming again
         SafeTransferLib.safeTransferETH(msg.sender, refundAmount);
     }

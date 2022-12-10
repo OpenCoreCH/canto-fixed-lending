@@ -4,7 +4,6 @@ pragma solidity 0.8.17;
 import "./IERC721.sol";
 
 interface ITurnstile is IERC721 {
-
     struct NftData {
         uint256 tokenId;
         bool registered;
@@ -14,7 +13,7 @@ interface ITurnstile is IERC721 {
     function feeRecipient(address) external view returns (NftData memory);
 
     /// @notice maps tokenId to fees earned
-    function balances(uint256) external view returns(uint256);
+    function balances(uint256) external view returns (uint256);
 
     /// @notice Returns current value of counter used to tokenId of new minted NFTs
     /// @return current counter value
@@ -48,7 +47,11 @@ interface ITurnstile is IERC721 {
     /// @param _recipient recipient of fees
     /// @param _amount amount of fees to withdraw
     /// @return amount of fees withdrawn
-    function withdraw(uint256 _tokenId, address payable _recipient, uint256 _amount) external returns (uint256);
+    function withdraw(
+        uint256 _tokenId,
+        address payable _recipient,
+        uint256 _amount
+    ) external returns (uint256);
 
     /// @notice Distributes collected fees to the smart contract. Only callable by owner.
     /// @param _tokenId NFT that earned fees
