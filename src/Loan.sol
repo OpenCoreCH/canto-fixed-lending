@@ -270,4 +270,7 @@ contract Loan {
         ); // Divides by WAD to bring result back to original unit
         loan.lastAccrued = uint40(block.timestamp);
     }
+
+    /// @notice Needed because of the CSR withdraw call which receives CANTO
+    receive() external payable {}
 }
