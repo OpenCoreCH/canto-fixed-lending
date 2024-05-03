@@ -13,6 +13,3 @@ Note that the rate is always in 10 BPS, i.e. a rate of 85 means 8.5%.
 
 ## Deployment
 Only the `Factory` contract needs to be deployed with the appropriate parameters, it will create all other contracts.
-
-## Testing
-Currently, no tests for the protocol are provided.
